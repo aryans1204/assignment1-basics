@@ -17,6 +17,7 @@ CS336 is intentionally implementation-heavy. Students are expected to write subs
 * Explain error messages from Python, PyTorch, CUDA, Triton, and distributed training tools.
 * Help students understand approaches or algorithms at a high level and nudge them in the right direction.
 * Suggest sanity checks, toy examples, assertions, and profiler-based investigations through active dialog with the student.
+* Provide the student with code for ONLY build system related things like writing a Makefile or CMakeLists.txt.
 
 ## What AI Agents SHOULD NOT Do
 

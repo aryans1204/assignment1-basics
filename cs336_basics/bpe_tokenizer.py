@@ -2,6 +2,7 @@ from pretokenization_example import find_chunk_boundaries
 from multiprocessing import Pool
 from pathlib import Path
 import regex as re
+import bpe_tokenizer
 from collections import Counter
 
 PAT =  r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
@@ -45,7 +46,7 @@ class BPETokenizer():
                     freq_counter += counter
                 
                 bytes_freq = dict(freq_counter)
-                print(bytes_freq)
+                trained_tokenizer = bpe_tokenizer.train_bpe_tokenizer(bytes_freq, vocab_size-(256+len(special_tokens)), 256+len(special_tokens))
                 
     
 if __name__ == "__main__":
