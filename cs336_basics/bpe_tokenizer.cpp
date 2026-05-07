@@ -77,14 +77,14 @@ void update_freqs_after_merge(std::unordered_map<std::string, int>& freqs, Merge
                 // update prefix of str
                 invalid_merged_pairs.insert(word.substr(pos-1, merged_pair.merged_str.size()));
                 std::string new_pair = std::string(1, word[pos-1]) + merged_pair.merged_str;
-                unmerged_freqs[new_pair]++;
+                unmerged_freqs[new_pair] += freqs[word];
                 unmerged_words[new_pair].insert(word);
             }
 
             if (pos + merged_pair.merged_str.size() < word.size()) {
                 invalid_merged_pairs.insert(word.substr(pos+1, merged_pair.merged_str.size()));
-                std::string new_pair = merged_pair.merged_str+std::string(1, word[pos+1]);
-                unmerged_freqs[new_pair]++;
+                std::string new_pair = merged_pair.merged_str+std::string(1, word[pos+merged_pair.merged_str.size()]);
+                unmerged_freqs[new_pair] += freqs[word];
                 unmerged_words[new_pair].insert(word);
             }                                                                                                          
             pos += merged_pair.merged_str.size();
