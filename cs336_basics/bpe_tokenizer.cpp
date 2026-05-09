@@ -6,7 +6,11 @@
 #include <memory>
 #include <queue>
 #include <utility>
+#include <array>
 #include <algorithm>
+#include <type_traits>
+#include <functional>
+
 
 struct MergedPair {
     std::string merged_1, merged_2;
@@ -19,8 +23,21 @@ struct MergedPair {
 };
 
 struct TrainedTokenizer {
-    std::vector<std::string> merged_pairs;
-    std::unordered_map<std::string, int> token_ids;
+    std::vector<std::array<std::string, 2>> merged_pairs;
+    std::vector<std::string> token_ids;
+};
+
+template <typename T>
+concept IsHashable = std::is_invocable_v<std::hash<T>, const T&>;
+
+template <IsHashable T>
+struct Hasher {
+    std::size_t operator()(const std::pair<T,T>& p) const noexcept {
+        std::size_t h1 = std::hash<T>{}(p.first);
+        std::size_t h2 = std::hash<T>{}(p.second);
+        // boost::hash_combine's mixing constant
+        return h1 ^ (h2 + 0x9e3779b9 + (h1 << 6) + (h1 >> 2));
+    }
 };
 
 auto cmp = [](const MergedPair& a, const MergedPair& b) {
@@ -32,8 +49,9 @@ auto cmp = [](const MergedPair& a, const MergedPair& b) {
     return a.frequency > b.frequency;
 };
 
-std::set<MergedPair, decltype(cmp), std::vector<MergedPair>> freq_by_pair;
+std::set<MergedPair, decltype(cmp)> freq_by_pair;
 std::unordered_map<std::string, std::vector<std::string>> word_to_prefix, word_to_suffix;
+std::unordered_map<std::pair<std::string, std::string>, int, Hasher<std::string>> merged_freq_cache;
 
 void initialize_priority_queue(std::unordered_map<std::string, int>& freqs) 
 {
@@ -75,6 +93,7 @@ void initialize_priority_queue(std::unordered_map<std::string, int>& freqs)
                 }
             }
             mapped_pairs.insert(std::move(merged_pair));
+            merged_freq_cache[{merged_1, merged_2}] = total_freq;
             pairs.push_back(MergedPair{.merged_1=std::move(merged_1), .merged_2=std::move(merged_2), .frequency=total_freq, .words=std::move(words_pairs_exists)});
         }
     }
@@ -85,7 +104,7 @@ void initialize_priority_queue(std::unordered_map<std::string, int>& freqs)
 void update_freqs_after_merge(std::unordered_map<std::string, int>& freqs, MergedPair& merged_pair)
 {
     std::unordered_map<std::string, MergedPair> new_merged_candidates;
-    std::unordered_map<std::string, std::pair<int, std::unordered_set<std::string>>> updated_freqs;
+    std::unordered_map<std::pair<std::string, std::string>, std::pair<int, std::unordered_set<std::string>>, Hasher<std::string>> updated_freqs;
 
     for (auto word : merged_pair.words) {
         // update only those words where merged_str appears
@@ -95,8 +114,8 @@ void update_freqs_after_merge(std::unordered_map<std::string, int>& freqs, Merge
             if (pos) {
                 // here we need to reduce the frequency of prefix+merged_1 by freqs[word]
                 // and update the prefix of word[pos+merged_1.size()] to be the prefix of merged_1
-                updated_freqs[word_to_prefix[word][pos]+merged_pair.merged_1].first += freqs[word];
-                updated_freqs[word_to_prefix[word][pos]+merged_pair.merged_1].second.insert(word);
+                updated_freqs[{word_to_prefix[word][pos], merged_pair.merged_1}].first += freqs[word];
+                updated_freqs[{word_to_prefix[word][pos], merged_pair.merged_1}].second.insert(word);
 
                 // Create new merged candidate of prefix+merged_1+merged2
 
@@ -111,16 +130,15 @@ void update_freqs_after_merge(std::unordered_map<std::string, int>& freqs, Merge
                 new_merged_candidates[word_to_prefix[word][pos]+merged_str].frequency += freqs[word];
                 new_merged_candidates[word_to_prefix[word][pos]+merged_str].words.insert(word);
 
-                word_to_prefix[word][pos+merged_pair.merged_1.size()] = word_to_prefix[word][pos];
                 // Change suffix of prefix of merged_1 to be merged_str
-                word_to_suffix[word][pos-[word_to_prefix[word][pos].size()]] = merged_str;
+                word_to_suffix[word][pos-word_to_prefix[word][pos].size()] = merged_str;
             }
 
             if (pos + merged_str.size() < word.size()) {
 
                 // Create new merged candidate of merged_1+merged2+suffix
-                updated_freqs[merged_pair.merged_2+word_to_suffix[word][pos+merged_pair.merged_1.size()]].first += freqs[word];
-                updated_freqs[merged_pair.merged_2+word_to_suffix[word][pos+merged_pair.merged_1.size()]].second.insert(word);
+                updated_freqs[{merged_pair.merged_2, word_to_suffix[word][pos+merged_pair.merged_1.size()]}].first += freqs[word];
+                updated_freqs[{merged_pair.merged_2, word_to_suffix[word][pos+merged_pair.merged_1.size()]}].second.insert(word);
 
                 if (new_merged_candidates.find(merged_str+word_to_suffix[word][pos+merged_pair.merged_1.size()]) == new_merged_candidates.end()) {
                     new_merged_candidates[merged_str+word_to_suffix[word][pos+merged_pair.merged_1.size()]] = MergedPair{
@@ -133,10 +151,12 @@ void update_freqs_after_merge(std::unordered_map<std::string, int>& freqs, Merge
                 new_merged_candidates[merged_str+word_to_suffix[word][pos+merged_pair.merged_1.size()]].frequency += freqs[word];
                 new_merged_candidates[merged_str+word_to_suffix[word][pos+merged_pair.merged_1.size()]].words.insert(word);
 
-                word_to_suffix[word][pos] = word_to_suffix[word][pos+merged_pair.merged_1.size()];
                 // Change prefix of suffix of merged_2 to be merged_str
                 word_to_prefix[word][pos+merged_str.size()] = merged_str;
-            }                                                                                                          
+            }
+            word_to_prefix[word][pos+merged_pair.merged_1.size()] = word_to_prefix[word][pos];
+            word_to_suffix[word][pos] = word_to_suffix[word][pos+merged_pair.merged_1.size()];
+
             pos += merged_str.size();
         }
     }
@@ -144,15 +164,20 @@ void update_freqs_after_merge(std::unordered_map<std::string, int>& freqs, Merge
         freq_by_pair.insert(p.second);
     });
     
-    std::for_each(updated_freqs.begin(), updated_freqs.end(), [&freq_by_pair](const auto& p) -> void {
+    std::for_each(updated_freqs.begin(), updated_freqs.end(), [&freq_by_pair, &merged_freq_cache](const auto& p) -> void {
         MergedPair key;
-        key.merged_1 = p.first
-        auto it = *freq_by_pair.find(p.first);
+        key.merged_1 = std::move(p.first.first);
+        key.merged_2 = std::move(p.first.second);
+        key.frequency = merged_freq_cache[{key.merged_1, key.merged_2}];
+        auto it = *freq_by_pair.find(std::move(key));
         freq_by_pair.erase(it);
         it.frequency -= p.second.first;
-        it.words -= p.second.second;
-
-        freq_by_pair.insert(it);
+        if (!it.frequency) return;
+        std::for_each(p.second.second.begin(), p.second.second.end(), [&it](const auto& val) -> void {
+            it.words.erase(val);
+        });
+        merged_freq_cache[{it.merged_1, it.merged_2}] = it.frequency;
+        freq_by_pair.insert(std::move(it));
     });
 
 
@@ -161,12 +186,12 @@ void update_freqs_after_merge(std::unordered_map<std::string, int>& freqs, Merge
 TrainedTokenizer train_bpe_tokenizer(std::unordered_map<std::string, int> freqs, int vocab_size, int init_token_id)
 {
     auto cur_token_id = ++init_token_id;
-    std::vector<std::pair<std::string, std::string>> merged_pairs;
+    std::vector<std::array<std::string, 2>> merged_pairs;
     merged_pairs.reserve(vocab_size);
 
     initialize_priority_queue(freqs);
     
-    std::unordered_map<std::string, int> token_ids;
+    std::vector<std::string> token_ids(vocab_size+1);
 
     while (vocab_size && !freq_by_pair.empty()) {
         auto max_freq_pair = *freq_by_pair.begin();
@@ -174,7 +199,7 @@ TrainedTokenizer train_bpe_tokenizer(std::unordered_map<std::string, int> freqs,
 
         update_freqs_after_merge(freqs, max_freq_pair);
         merged_pairs.emplace_back(std::move(max_freq_pair.merged_1), std::move(max_freq_pair.merged_2));
-        token_ids[merged_pairs.back()] = cur_token_id++;
+        token_ids[cur_token_id++] = (merged_pairs.back()[0]+merged_pairs.back()[1]);
         vocab_size--;
     }
     return TrainedTokenizer{.merged_pairs=std::move(merged_pairs), .token_ids=std::move(token_ids)};
