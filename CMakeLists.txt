@@ -3,8 +3,9 @@ project(bpe_tokenizer)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_BUILD_TYPE Debug)
 
-find_package(Python 3.8 REQUIRED COMPONENTS Interpreter Development)
+find_package(Python 3.10 REQUIRED COMPONENTS Interpreter Development)
 
 include(FetchContent)
 FetchContent_Declare(

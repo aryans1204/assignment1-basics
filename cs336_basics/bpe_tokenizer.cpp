@@ -4,12 +4,13 @@
 #include <nanobind/stl/vector.h>
 #include <nanobind/stl/unordered_set.h>
 #include <memory>
-#include <queue>
+#include <set>
 #include <utility>
 #include <array>
 #include <algorithm>
 #include <type_traits>
 #include <functional>
+#include <iostream>
 
 
 struct MergedPair {
@@ -23,7 +24,7 @@ struct MergedPair {
 };
 
 struct TrainedTokenizer {
-    std::vector<std::array<std::string, 2>> merged_pairs;
+    std::vector<std::vector<std::string>> merged_pairs;
     std::vector<std::string> token_ids;
 };
 
@@ -131,7 +132,7 @@ void update_freqs_after_merge(std::unordered_map<std::string, int>& freqs, Merge
                 new_merged_candidates[word_to_prefix[word][pos]+merged_str].words.insert(word);
 
                 // Change suffix of prefix of merged_1 to be merged_str
-                word_to_suffix[word][pos-word_to_prefix[word][pos].size()] = merged_str;
+                //word_to_suffix[word][pos-word_to_prefix[word][pos].size()] = merged_str;
             }
 
             if (pos + merged_str.size() < word.size()) {
@@ -166,10 +167,12 @@ void update_freqs_after_merge(std::unordered_map<std::string, int>& freqs, Merge
     
     std::for_each(updated_freqs.begin(), updated_freqs.end(), [&freq_by_pair, &merged_freq_cache](const auto& p) -> void {
         MergedPair key;
-        key.merged_1 = std::move(p.first.first);
-        key.merged_2 = std::move(p.first.second);
+        key.merged_1 = p.first.first;
+        key.merged_2 = p.first.second;
         key.frequency = merged_freq_cache[{key.merged_1, key.merged_2}];
-        auto it = *freq_by_pair.find(std::move(key));
+        auto itr = freq_by_pair.find(std::move(key));
+        if (itr == freq_by_pair.end()) return;
+        auto it = *itr;
         freq_by_pair.erase(it);
         it.frequency -= p.second.first;
         if (!it.frequency) return;
@@ -183,25 +186,27 @@ void update_freqs_after_merge(std::unordered_map<std::string, int>& freqs, Merge
 
 }
 
-TrainedTokenizer train_bpe_tokenizer(std::unordered_map<std::string, int> freqs, int vocab_size, int init_token_id)
+TrainedTokenizer train_bpe_tokenizer(std::unordered_map<std::string, int> freqs, int n_merges, int init_token_id)
 {
     auto cur_token_id = ++init_token_id;
-    std::vector<std::array<std::string, 2>> merged_pairs;
-    merged_pairs.reserve(vocab_size);
+    std::vector<std::vector<std::string>> merged_pairs;
+    merged_pairs.reserve(n_merges);
 
     initialize_priority_queue(freqs);
     
-    std::vector<std::string> token_ids(vocab_size+1);
+    std::cout << freq_by_pair.size() << std::endl;
+    std::vector<std::string> token_ids(cur_token_id+n_merges+1);
 
-    while (vocab_size && !freq_by_pair.empty()) {
+    while (n_merges && !freq_by_pair.empty()) {
         auto max_freq_pair = *freq_by_pair.begin();
         freq_by_pair.erase(max_freq_pair);
 
         update_freqs_after_merge(freqs, max_freq_pair);
-        merged_pairs.emplace_back(std::move(max_freq_pair.merged_1), std::move(max_freq_pair.merged_2));
+        merged_pairs.push_back({std::move(max_freq_pair.merged_1), std::move(max_freq_pair.merged_2)});
         token_ids[cur_token_id++] = (merged_pairs.back()[0]+merged_pairs.back()[1]);
-        vocab_size--;
+        n_merges--;
     }
+
     return TrainedTokenizer{.merged_pairs=std::move(merged_pairs), .token_ids=std::move(token_ids)};
 }
 
