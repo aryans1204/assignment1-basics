@@ -16,3 +16,5 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(nanobind)
 
 nanobind_add_module(bpe_tokenizer cs336_basics/bpe_tokenizer.cpp)
+target_compile_options(bpe_tokenizer PRIVATE -fsanitize=address -fno-omit-frame-pointer)
+target_link_options(bpe_tokenizer PRIVATE -fsanitize=address)

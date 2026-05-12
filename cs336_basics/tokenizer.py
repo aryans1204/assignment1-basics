@@ -48,10 +48,10 @@ class BPETokenizer():
                     freq_counter += counter
                 
                 bytes_freq = dict(freq_counter)
-                print(len(bytes_freq.keys()))
                 trained_tokenizer = bpe_tokenizer.train_bpe_tokenizer(bytes_freq, vocab_size-(256+len(special_tokens)), 255+len(special_tokens))
-                token_ids = {i: bytes([i]) for i in bytes(range(256))} | {256+i: special_tokens[i].encode("utf-8") for i in range(len(special_tokens))} | {id: trained_tokenizer.token_ids[id].encode("utf-8") for id in range(256+len(special_tokens), len(trained_tokenizer.token_ids))}
-                merges = [(merged_pair[0].encode("utf-8"), merged_pair[1].encode("utf-8")) for merged_pair in trained_tokenizer.merged_pairs]
+                token_ids = {i: bytes([i]) for i in bytes(range(256))} | {256+i: special_tokens[i].encode("utf-8") for i in range(len(special_tokens))} | {id: trained_tokenizer.token_ids[id] for id in range(256+len(special_tokens), len(trained_tokenizer.token_ids))}
+                merges = [(merged_pair[0], merged_pair[1]) for merged_pair in trained_tokenizer.merged_pairs]
+                print(merges)
                 return token_ids, merges
                 
     
