@@ -149,9 +149,6 @@ void update_freqs_after_merge(std::unordered_map<std::string, int>& freqs, Merge
                         .words=std::unordered_set<std::string>()
                     };
                 }
-                std::cout << "Word " << word << std::endl;
-                std::cout << "Pos " << pos << std::endl;
-                std::cout << "Merged str " << merged_str << std::endl;
                 new_merged_candidates[merged_str+word_to_suffix[word][pos+merged_pair.merged_1.size()]].frequency += freqs[word];
                 new_merged_candidates[merged_str+word_to_suffix[word][pos+merged_pair.merged_1.size()]].words.insert(word);
 
@@ -219,8 +216,21 @@ NB_MODULE(bpe_tokenizer, m) {
     m.def("train_bpe_tokenizer", &train_bpe_tokenizer, nanobind::rv_policy::move);
 
     nanobind::class_<TrainedTokenizer>(m, "TrainedTokenizer")
-        .def(nanobind::init<decltype(std::declval<TrainedTokenizer>().merged_pairs), decltype(std::declval<TrainedTokenizer>().token_ids)>())
-        .def_prop_ro("TrainedTokenizer", [](const TrainedTokenizer& t))
-        .def_rw("merged_pairs", &TrainedTokenizer::merged_pairs)
-        .def_rw("token_ids", &TrainedTokenizer::token_ids);
+        .def_prop_ro("token_ids", [](const TrainedTokenizer& t) -> nanobind::list {
+            nanobind::list tokens;
+            for (auto token : t.token_ids) {
+                tokens.append(nanobind::bytes(token.data(), token.size()));
+            }
+            return tokens;
+        })
+        .def_prop_ro("merged_pairs", [](const TrainedTokenizer& t) -> nanobind::list {
+            nanobind::list pairs;
+            for (auto pair : t.merged_pairs) {
+                nanobind::list merged_pair;
+                merged_pair.append(nanobind::bytes(pair[0].data(), pair[0].size()));
+                merged_pair.append(nanobind::bytes(pair[1].data(), pair[1].size()));
+                pairs.append(merged_pair);
+            }
+            return pairs;
+        });
 }

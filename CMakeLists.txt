@@ -14,7 +14,5 @@ FetchContent_Declare(
     GIT_TAG v2.4.0
 )
 FetchContent_MakeAvailable(nanobind)
-
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR})
 nanobind_add_module(bpe_tokenizer cs336_basics/bpe_tokenizer.cpp)
-target_compile_options(bpe_tokenizer PRIVATE -fsanitize=address -fno-omit-frame-pointer)
-target_link_options(bpe_tokenizer PRIVATE -fsanitize=address)
