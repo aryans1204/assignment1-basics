@@ -100,7 +100,7 @@ class BPETokenizer():
                 
     
 if __name__ == "__main__":
-    BPETokenizer().train(corpus=Path("data/TinyStoriesV2-GPT4-valid.txt"), vocab_size=10000, special_tokens=["<|endoftext|>"])
+    BPETokenizer().train(corpus=Path("tests/fixtures/corpus.en"), vocab_size=10000, special_tokens=["<|endoftext|>"])
 
                 
 
