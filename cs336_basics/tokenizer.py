@@ -1,10 +1,12 @@
 import os
-from typing import BinaryIO
+from typing import BinaryIO, Iterable, Iterator
 from multiprocessing import Pool
 from pathlib import Path
 import regex as re
 import bpe_tokenizer
 from collections import Counter
+import pickle
+
 
 PAT =  r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 def find_chunk_boundaries(
@@ -53,9 +55,13 @@ def find_chunk_boundaries(
     # Make sure all boundaries are unique, but might be fewer than desired_num_chunks
     return sorted(set(chunk_boundaries))
 
-def _pre_tokenize(corpus_with_tokens: tuple[str, list[str]]) -> dict[str, int]:
+def _pre_tokenize(corpus_with_tokens: tuple[str, list[str]], encoding=False) -> dict[str, int] | list[str]:
     freq = {}
     corpus_chunk, special_tokens = corpus_with_tokens
+    if encoding:
+        # while encoding, keep the special tokens
+        return re.finditer(PAT, corpus)
+
     escaped_tokens = [re.escape(token) for token in special_tokens]
     pattern = f"{"|".join(escaped_tokens)}"
     delimited_corpus = re.split(pattern, corpus_chunk)
@@ -70,8 +76,63 @@ def _pre_tokenize(corpus_with_tokens: tuple[str, list[str]]) -> dict[str, int]:
 
 class BPETokenizer():
     
-    def __init__(self):
-        pass
+    def __init__(self, vocab: dict[tuple[int, bytes]], merges: list[tuple[bytes, bytes]], special_tokens: list[str] | None = None):
+        self.vocab = vocab
+        self.inv_vocab = {val: key for (key, val) in vocab}
+        self.merges = merges
+        self.special_tokens = special_tokens
+    
+    @classmethod
+    def from_files(cls, vocab_filepath: str, merges_filepath: str, special_tokens: list[str] | None = None):
+        """
+            Construct Tokenizer from a vocab and merges filepath
+        """
+        with open(vocab_filepath, "rb") as f:
+            vocab = pickle.load(f)
+            with open(merges_filepath, "rb") as merge:
+                merges = pickle.load(merge)
+                return cls(vocab, merges, special_tokens)
+            
+    def encode(self, text: str) -> list[int]:
+        """
+            Encode a given string into a list of tokens
+        """
+        tokens = []
+        pre_tokens = _pre_tokenize((text, self.special_tokens), encoding=True)
+        for pre_token in pre_tokens:
+            if pre_token in self.special_tokens:
+                tokens.append(self.inv_vocab[pre_token.encode("utf-8")])
+                continue
+            
+            merged_idx = 0
+            merged_pairs = set([pre_token[i] for i in range(len(pre_token)-1)])
+            indices = {pre_token[i]: i for i in range(len(pre_token))}
+
+            while pre_token not in merged_pairs and merged_idx < len(self.merges):
+                merge_1, merge_2 = self.merges[merged_idx]
+                if merge_1 in merged_pairs and merge_2 in merged_pairs and indices[merge_1]+len(merge_1) == indices[merge_2]:
+                    merged_pair = merge_1+merge_2
+                    tokens.append(self.inv_vocab[merged_pair.encode("utf-8")])
+                    merged_pairs.remove(merge_1)
+                    merged_pairs.remove(merge_2)
+                    merged_pairs.add(merged_pair)
+                    indices[merged_pair] = indices[merge_1]
+                if pre_token not in merged_pairs:
+                    for m in merged_pairs:
+                        if len(m) == 1:
+                            tokens.append(self.inv_vocab[m.encode('utf-8')])
+        return tokens
+    
+    def encode_itreable(self, text: Iterable) -> Iterator:
+        for t in text:
+            yield self.encode(text)
+    
+    def decode(self, token_ids: list[int]) -> str:
+        decoded = bytearray()
+        for token_id in token_ids:
+            decoded.append(self.vocab[token_id])
+        
+        return decoded.decode("utf-8")
     
     @staticmethod
     def train(corpus: Path, vocab_size: int, special_tokens: list[str]) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
